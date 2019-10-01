@@ -331,6 +331,29 @@ func (m *MegasasIoctl) ScanDevices() []MegasasDevice {
 	return mdevs
 }
 
+func (m *MegasasIoctl) GetDiskInfo(hostID uint16, devID uint8) (*DiskInfo, error) {
+  // Send ATA IDENTIFY command as a CDB16 passthru command
+  cdb := scsi.CDB16{scsi.SCSI_ATA_PASSTHRU_16}
+  cdb[1] = 0x08                     // ATA protocol (4 << 1, PIO data-in)
+  cdb[2] = 0x0e                     // BYT_BLOK = 1, T_LENGTH = 2, T_DIR = 1
+  cdb[14] = ata.ATA_IDENTIFY_DEVICE // command
+  respBuf := make([]byte, 512)
+  if err := m.PassThru(hostID, devID, cdb[:], respBuf, scsi.SG_DXFER_FROM_DEV); err != nil {
+    return nil, err
+  }
+  ident_buf := ata.IdentifyDeviceData{}
+  binary.Read(bytes.NewBuffer(respBuf), utils.NativeEndian, &ident_buf)
+  return &DiskInfo{
+    Serial: string(ident_buf.SerialNumber()),
+    Model:  string(ident_buf.ModelNumber()),
+  }, nil
+}
+
+type DiskInfo struct {
+  Serial string
+  Model  string
+}
+
 // inquiry fetches a standard SCSI INQUIRY response from device
 // TODO: Return error if unsuccessful
 func (d *MegasasDevice) inquiry() scsi.InquiryResponse {
